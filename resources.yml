@@ -1,0 +1,150 @@
+# Dynamodb table for our notes
+notesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: notes-${self:provider.stage}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: notesId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: notesId
+            KeyType: HASH
+
+# Cognito user pool
+cognitoUserPool:
+  Type: AWS::Cognito::UserPool
+  Properties:
+    UserPoolName: MyNotesUP-${self:provider.stage}
+
+# User pool web client
+cognitoUserPoolWebclient:
+  Type: AWS::Cognito::UserPoolClient
+  Properties:
+    UserPoolId: !Ref cognitoUserPool
+    ClientName: web
+    AllowedOAuthFlowsUserPoolClient: true
+    SupportedIdentityProviders:
+      - COGNITO
+    AllowedOAuthScopes:
+      - phone
+      - email
+      - profile
+      - openid
+    AllowedOAuthFlows:
+      - implicit
+    CallbackURLs:
+      - http://localhost:3000
+
+# User pool domain
+cognitoUserPoolDomain:
+  Type: AWS::Cognito::UserPoolDomain
+  Properties:
+    UserPoolId: !Ref cognitoUserPool
+    Domain: mynectzy-${self:provider.stage}
+
+# cloudFront Distribution Cache Policy
+
+restAPICachePolicy:
+  Type: AWS::CloudFront::CachePolicy
+  Properties:
+    CachePolicyConfig: 
+      DefaultTTL: 300
+      MaxTTL: 31536000
+      MinTTL: 120
+      Name: RestAPICachePolicy
+      ParametersInCacheKeyAndForwardedToOrigin: 
+        CookiesConfig: 
+          CookieBehavior: none
+        EnableAcceptEncodingBrotli: true
+        EnableAcceptEncodingGzip: true
+        HeadersConfig: 
+          HeaderBehavior: whitelist
+          Headers: 
+            - Authorization
+        QueryStringsConfig: 
+          QueryStringBehavior: none
+       
+# cloudFront Distribution
+cloudFrontDistribution:
+  Type: AWS::CloudFront::Distribution
+  Properties:
+    DistributionConfig:
+      Enabled: true 
+      DefaultCacheBehavior: 
+        TargetOriginId: restAPIOrigin
+        CachePolicyId: !Ref restAPICachePolicy
+        ViewerProtocolPolicy: https-only
+      CacheBehaviors: 
+        - PathPattern: /dev/*
+          TargetOriginId: restAPIOrigin
+          CachePolicyId: !Ref restAPICachePolicy
+          ViewerProtocolPolicy: https-only
+          AllowedMethods:
+            - HEAD
+            - DELETE
+            - POST
+            - GET
+            - OPTIONS
+            - PUT
+            - PATCH
+          CachedMethods:
+            - GET
+            - HEAD
+      Origins: 
+        - Id: restAPIOrigin
+          DomainName: !Join
+           - "."
+           - - !Ref ApiGatewayRestApi
+             - "execute-api"
+             - ${aws:region}
+             - "amazonaws.com"
+          CustomOriginConfig:
+            OriginProtocolPolicy: https-only
+
+
+# webACLAssociation:
+#   Type: AWS::WAFv2::WebACLAssociation
+#   Properties:
+#     ResourceArn: arn:aws:cloudfront::058264198774:distribution/E2P8WOQMN3RECD
+#     WebACLArn: !GetAtt webAppFirewall.Arn
+
+# # WAF
+# webAppFirewall:
+#   Type: AWS::WAFv2::WebACL
+#   Properties:
+#     Name: myWebACL
+#     Scope: CLOUDFRONT
+#     DefaultAction:  
+#       Allow: {}
+#     Rules:
+#       - Name: blockedLocation
+#         Priority: 0
+#         Action:
+#             Block: {}
+#         Statement:
+#           GeoMatchStatement:
+#             CountryCodes:
+#               - CM
+#         VisibilityConfig:
+#             SampledRequestsEnabled: true
+#             CloudWatchMetricsEnabled: true
+#             MetricName: GeoMatchRuleMetric
+#       # - Name: CoreRuleSetRule
+#       #   Priority: 1
+#       #   Statement:
+#       #     ManagedRuleGroupStatement:
+#       #       VendorName: AWS
+#       #       Name: AWSManagedRulesCommonRuleSet
+#       #   VisibilityConfig:
+#       #       SampledRequestsEnabled: true
+#       #       CloudWatchMetricsEnabled: true
+#       #       MetricName: CommonRuleSetMetric
+#     VisibilityConfig:
+#       CloudWatchMetricsEnabled: true
+#       MetricName: myWebACL
+#       SampledRequestsEnabled: true
+
+
+
+# aws wafv2 list-available-managed-rule-groups --scope CLOUDFRONT
